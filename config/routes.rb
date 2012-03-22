@@ -10,5 +10,5 @@ RailsAdmin::Engine.routes.draw do
     end
   end
 
-  devise_for :users, :controllers => {:omniauth_callback => 'users/omniauth_callbacks'}
+  match "/user/auth/google/callback", :to => "rails_admin/users/omniauth_callbacks#google"
 end
