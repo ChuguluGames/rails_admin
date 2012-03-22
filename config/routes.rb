@@ -9,4 +9,6 @@ RailsAdmin::Engine.routes.draw do
       end
     end
   end
+
+  devise_for :users, :controllers => {:omniauth_callback => 'users/omniauth_callbacks'}
 end
