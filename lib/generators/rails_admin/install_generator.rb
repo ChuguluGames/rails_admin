@@ -30,6 +30,7 @@ module RailsAdmin
       else
         display "Found it!"
       end
+
       unless File.exists?(Rails.root.join("config/initializers/devise.rb"))
         display "Looks like you don't have devise installed! We'll install it for you:"
         generate "devise:install"
@@ -53,6 +54,20 @@ module RailsAdmin
           display "Ok, Devise looks already set up with user model name '#{model_name}':"
         end
       end
+
+      display "We will now inject User#find_for_open_id emthod into #{model_name} model."
+      inject_into_class "app/models/#{model_name}.rb", User do
+        "def self.find_for_open_id(access_token, signed_in_resource=nil)\n"
+        "  data = access_token.info\n"
+        "  if user = User.where(:email => data['email']).first\n"
+        "    user\n"
+        "  else\n"
+        "    User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"
+        "  end\n"
+        "end\n"
+      end
+      copy_file 'controllers/omniauth_callbacks_controller.rb', "app/controllers/omniauth_callbacks_controller.rb"
+
       display "Now you'll need an initializer..."
       @model_name = model_name
       unless initializer
