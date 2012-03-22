@@ -9,6 +9,4 @@ RailsAdmin::Engine.routes.draw do
       end
     end
   end
-
-  match "/user/auth/google/callback", :to => "rails_admin/users/omniauth_callbacks#google"
 end
