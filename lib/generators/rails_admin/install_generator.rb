@@ -91,13 +91,13 @@ module RailsAdmin
         "    else\n"+
         "      User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"+
         "    end\n"+
-        "  end\n"
+        "  end\n\n"
       end
       insert_into_file 'config/initializers/devise.rb', :before => "Devise.setup do |config|\n" do
-        "require 'openid/store/filesystem'"
+        "require 'openid/store/filesystem'\n\n"
       end
       insert_into_file 'config/initializers/devise.rb', :after => "Devise.setup do |config|\n" do
-        "  config.omniauth :open_id, :store => OpenID::Store::Filesystem.new('/tmp'), :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id', :require => 'omniauth-openid'"
+        "  config.omniauth :open_id, :store => OpenID::Store::Filesystem.new('/tmp'), :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id', :require => 'omniauth-openid'\n\n"
       end
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/omniauth_callbacks_controller.rb'
 
