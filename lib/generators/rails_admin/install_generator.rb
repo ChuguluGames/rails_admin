@@ -84,14 +84,14 @@ module RailsAdmin
 
       display "We will now inject User#find_for_open_id method into #{model_name} model."
       inject_into_class "app/models/#{model_name}.rb", model_name.capitalize, :force => true do
-        "def self.find_for_open_id(access_token, signed_in_resource=nil)\n"
-        "  data = access_token.info\n"
-        "  if user = User.where(:email => data['email']).first\n"
-        "    user\n"
-        "  else\n"
-        "    User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"
+        "  def self.find_for_open_id(access_token, signed_in_resource=nil)\n"+
+        "    data = access_token.info\n"+
+        "    if user = User.where(:email => data['email']).first\n"+
+        "      user\n"+
+        "    else\n"+
+        "      User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"+
+        "    end\n"+
         "  end\n"
-        "end\n"
       end
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/omniauth_callbacks_controller.rb'
 
