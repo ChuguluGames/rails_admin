@@ -88,8 +88,6 @@ module RailsAdmin
         "    data = access_token.info\n"+
         "    if user = User.where(:email => data['email']).first\n"+
         "      user\n"+
-        "    else\n"+
-        "      User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"+
         "    end\n"+
         "  end\n\n"
       end
