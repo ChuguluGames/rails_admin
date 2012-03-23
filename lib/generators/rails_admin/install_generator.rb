@@ -93,6 +93,12 @@ module RailsAdmin
         "    end\n"+
         "  end\n"
       end
+      insert_into_file 'config/initializers/devise.rb', :after => "Devise.setup do |config|\n" do
+        "require 'openid/store/filesystem'"
+      end
+      insert_into_file 'config/initializers/devise.rb', :after => "Devise.setup do |config|\n" do
+        "config.omniauth :open_id, :store => OpenID::Store::Filesystem.new('/tmp'), :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id', :require => 'omniauth-openid'"
+      end
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/omniauth_callbacks_controller.rb'
 
     end
