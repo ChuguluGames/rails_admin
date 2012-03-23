@@ -65,7 +65,7 @@ module RailsAdmin
         "    User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"
         "  end\n"
         "end\n"
-      end
+      end, :force => true
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/omniauth_callbacks_controller.rb'
 
       display "Now you'll need an initializer..."
