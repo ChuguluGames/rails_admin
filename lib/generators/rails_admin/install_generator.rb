@@ -108,7 +108,7 @@ module RailsAdmin
       gsub_file Rails.root.join("app/models/user.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
       display "Set devise's omniauth_callbacks_controller's routes to app/controllers/users/omniauth_callbacks_controller.rb"
-      gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w/, ''
+      gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w+/, ''
       route("devise_for :#{model_name.pluralize}, :controllers => { :omniauth_callbacks => 'users/omniauth_callbacks' }")
     end
   end
