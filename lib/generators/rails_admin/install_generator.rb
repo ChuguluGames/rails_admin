@@ -56,7 +56,7 @@ module RailsAdmin
       end
 
       display "We will now inject User#find_for_open_id method into #{model_name} model."
-      inject_into_class "app/models/#{model_name}.rb", 'User' do
+      inject_into_class "app/models/#{model_name}.rb", 'User', :force => true do
         "def self.find_for_open_id(access_token, signed_in_resource=nil)\n"
         "  data = access_token.info\n"
         "  if user = User.where(:email => data['email']).first\n"
@@ -65,7 +65,7 @@ module RailsAdmin
         "    User.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"
         "  end\n"
         "end\n"
-      end, :force => true
+      end
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/omniauth_callbacks_controller.rb'
 
       display "Now you'll need an initializer..."
