@@ -93,14 +93,19 @@ module RailsAdmin
         "    end\n"+
         "  end\n\n"
       end
+      display "Require openid/store/filesystem for Devise"
       insert_into_file 'config/initializers/devise.rb', :before => "Devise.setup do |config|\n" do
         "require 'openid/store/filesystem'\n\n"
       end
+      display "Set config for Omniauth OpenID in Devise"
       insert_into_file 'config/initializers/devise.rb', :after => "Devise.setup do |config|\n" do
         "  config.omniauth :open_id, :store => OpenID::Store::Filesystem.new('/tmp'), :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id', :require => 'omniauth-openid'\n\n"
       end
+      display "Copy omniauth_callbacks_controller.rb in app/controllers/users"
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/users/omniauth_callbacks_controller.rb'
 
+      display "Set user model as omniauthable and unset as registerable"
+      gsub_file Rails.root.join("app/models/user.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
     end
   end
 end
