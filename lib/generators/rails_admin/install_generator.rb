@@ -103,7 +103,7 @@ module RailsAdmin
       copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/users/omniauth_callbacks_controller.rb'
 
       display "Set user model as omniauthable and unset as registerable"
-      gsub_file Rails.root.join("app/models/user.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
+      gsub_file Rails.root.join("app/models/#{model_name.pluralize}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
       display "Set devise's omniauth_callbacks_controller's routes to app/controllers/users/omniauth_callbacks_controller.rb"
       gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w+/, ''
