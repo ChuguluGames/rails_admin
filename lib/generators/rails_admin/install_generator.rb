@@ -108,6 +108,9 @@ module RailsAdmin
       display "Set devise's omniauth_callbacks_controller's routes to app/controllers/users/omniauth_callbacks_controller.rb"
       gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w+/, ''
       route("devise_for :#{model_name}, :controllers => { :omniauth_callbacks => 'users/omniauth_callbacks' }")
+
+      display "We have a dependency with omniauth-openid gem"
+      gem 'omniauth-openid'
     end
   end
 end
