@@ -10,12 +10,14 @@ Chugulu forked this project to implement Omniauth with Devise by default to allo
 
 First, we had to adapt the model created while running `rails generate devise:install` (through the rails_admin generator) by adding the following:
 
-    def self.find_for_open_id(access_token, signed_in_resource=nil)
-      data = access_token.info
-      if user = #{model_name.camelize}.where(:email => data['email']).first
-        user
-      end
-    end
+```ruby
+def self.find_for_open_id(access_token, signed_in_resource=nil)
+  data = access_token.info
+  if user = #{model_name.camelize}.where(:email => data['email']).first
+    user
+  end
+end
+```
 
 Then, we created a controller [`OmniauthCallbacksController`](https://github.com/ChuguluGames/rails_admin/tree/master/lib/generators/rails_admin/templates/controllers).
 
