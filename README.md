@@ -13,7 +13,7 @@ First, we had to adapt the model created while running `rails generate devise:in
 ```ruby
 def self.find_for_open_id(access_token, signed_in_resource=nil)
   data = access_token.info
-  if user = #{model_name.camelize}.where(:email => data['email']).first
+  if user = User.where(:email => data['email']).first
     user
   end
 end
