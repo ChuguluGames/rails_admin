@@ -81,7 +81,7 @@ module RailsAdmin
       gsub_file "config/routes.rb", /mount RailsAdmin::Engine => \'\/.+\', :as => \'rails_admin\'/, ''
       route("mount RailsAdmin::Engine => '/#{namespace}', :as => 'rails_admin'")
 
-      display "We will now inject User#find_for_open_id method into #{model_name} model."
+      display "We will now inject AdminUser#find_for_open_id method into #{model_name} model."
       inject_into_class "app/models/#{model_name}.rb", model_name.capitalize, :force => true do
         "  def self.find_for_open_id(access_token, signed_in_resource=nil)\n"+
         "    data = access_token.info\n"+
