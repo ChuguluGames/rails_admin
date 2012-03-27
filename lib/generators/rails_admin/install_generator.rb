@@ -80,13 +80,12 @@ module RailsAdmin
       namespace = ask_for("Where do you want to mount rails_admin?", "admin", _namespace)
       gsub_file "config/routes.rb", /mount RailsAdmin::Engine => \'\/.+\', :as => \'rails_admin\'/, ''
       route("mount RailsAdmin::Engine => '/#{namespace}', :as => 'rails_admin'")
-      display "Job's done: migrate, start your server and visit '/#{namespace}'!", :blue
 
       display "We will now inject User#find_for_open_id method into #{model_name} model."
       inject_into_class "app/models/#{model_name}.rb", model_name.capitalize, :force => true do
         "  def self.find_for_open_id(access_token, signed_in_resource=nil)\n"+
         "    data = access_token.info\n"+
-        "    if user = User.where(:email => data['email']).first\n"+
+        "    if user = #{model_name.camelize}.where(:email => data['email']).first\n"+
         "      user\n"+
         "    end\n"+
         "  end\n\n"
@@ -99,18 +98,20 @@ module RailsAdmin
       insert_into_file 'config/initializers/devise.rb', :after => "Devise.setup do |config|\n" do
         "  config.omniauth :open_id, :store => OpenID::Store::Filesystem.new('/tmp'), :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id', :require => 'omniauth-openid'\n\n"
       end
-      display "Copy omniauth_callbacks_controller.rb in app/controllers/users"
-      copy_file 'controllers/omniauth_callbacks_controller.rb', 'app/controllers/users/omniauth_callbacks_controller.rb'
+      display "Copy omniauth_callbacks_controller.rb in app/controllers/#{model_name.pluralize}"
+      copy_file 'controllers/omniauth_callbacks_controller.rb', "app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"
 
-      display "Set user model as omniauthable and unset as registerable"
+      display "Set #{model_name} model as omniauthable and unset as registerable"
       gsub_file Rails.root.join("app/models/#{model_name}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
-      display "Set devise's omniauth_callbacks_controller's routes to app/controllers/users/omniauth_callbacks_controller.rb"
+      display "Set devise's omniauth_callbacks_controller's routes to app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"
       gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w+/, ''
-      route("devise_for :#{model_name}, :controllers => { :omniauth_callbacks => 'users/omniauth_callbacks' }")
+      route("devise_for :#{model_name.pluralize}, :controllers => { :omniauth_callbacks => '#{model_name.pluralize}/omniauth_callbacks' }")
 
       display "We have a dependency with omniauth-openid gem"
       gem 'omniauth-openid'
+
+      display "Job's done: migrate, start your server and visit '/#{namespace}'!", :blue
     end
   end
 end
