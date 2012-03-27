@@ -103,6 +103,7 @@ module RailsAdmin
       display "Edit the #{model_name.camelize.pluralize} controller according to the model name chose"
       gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /Users::OmniauthCallbacksController/, "#{model_name.camelize.pluralize}::OmniauthCallbacksController"
       gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /User\.find_for_open_id/, "#{model_name.camelize}.find_for_open_id"
+      gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /current_user/, "current_#{model_name}"
 
       display "Set #{model_name} model as omniauthable and unset as registerable"
       gsub_file Rails.root.join("app/models/#{model_name}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
