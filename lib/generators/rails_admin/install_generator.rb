@@ -108,6 +108,12 @@ module RailsAdmin
       gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /current_user/, "current_#{model_name}"
       gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /new_user_session_url/, "new_#{model_name}_session_url"
 
+      display "Change error messages for omniauth_callbacks_controller.rb "
+      gsub_file Rails.root.join("app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"), /flash\[\:error\].*$/, "flash[:alert] = I18n.t \"devise.failure.invalid_email\", :domain => RailsAdmin::Config.authorized_admin_user_mail_suffix"
+      insert_into_file 'config/locales/devise.en.yml', :after => "      invalid_token: 'Invalid authentication token.'\n" do
+        "      invalid_email: 'Sorry, only email from %{domain} are accepted'"
+      end
+
       display "Set #{model_name} model as omniauthable and unset as registerable"
       gsub_file Rails.root.join("app/models/#{model_name}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
