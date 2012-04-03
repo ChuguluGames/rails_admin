@@ -115,7 +115,7 @@ module RailsAdmin
       end
 
       display "Set #{model_name} model as omniauthable and unset as registerable"
-      gsub_file Rails.root.join("app/models/#{model_name}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
+      gsub_file Rails.root.join("app/models/#{model_name.underscore}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
       display "Set devise's omniauth_callbacks_controller's routes to app/controllers/#{model_name.pluralize}/omniauth_callbacks_controller.rb"
       gsub_file Rails.root.join("config/routes.rb"), /devise_for :\w+/, ''
