@@ -87,6 +87,8 @@ module RailsAdmin
         "    data = access_token.info\n"+
         "    if user = #{model_name.camelize}.where(:email => data['email']).first\n"+
         "      user\n"+
+        "    elsif data['email'].end_with?(RailsAdmin::Config.authorized_admin_user_mail_suffix)\n"+
+        "      #{model_name.camelize}.create!(:email => data['email'], :password => Devise.friendly_token[0,20])\n"+
         "    end\n"+
         "  end\n\n"
       end

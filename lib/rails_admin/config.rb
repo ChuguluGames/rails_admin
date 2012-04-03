@@ -31,6 +31,10 @@ module RailsAdmin
       # Application title, can be an array of two elements
       attr_accessor :main_app_name
 
+      # Define users who are authorized to have an admin account depending on their email suffix
+      # default is "@chugulu.com"
+      attr_accessor :authorized_admin_user_mail_suffix
+
       # Configuration option to specify which models you want to exclude.
       attr_accessor :excluded_models
 
@@ -287,6 +291,7 @@ module RailsAdmin
         @total_columns_width = 697
         @label_methods = [:name, :title]
         @main_app_name = Proc.new { [Rails.application.engine_name.titleize.chomp(' Application'), 'Admin'] }
+        @authorized_admin_user_mail_suffix = "@chugulu.com"
         @registry = {}
         RailsAdmin::Config::Actions.reset
       end

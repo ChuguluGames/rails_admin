@@ -20,6 +20,9 @@ RailsAdmin.config do |config|
   # or for a dynamic name:
   # config.main_app_name = Proc.new { |controller| [Rails.application.engine_name.titleize, controller.params['action'].titleize] }
 
+  # Define users who are authorized to have an admin account depending on their email suffix
+  # default is "@chugulu.com"
+  # config.authorized_admin_user_mail_suffix = "@chugulu.com"
 
   #  ==> Global show view settings
   # Display empty fields in show views
