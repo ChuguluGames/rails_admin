@@ -114,6 +114,11 @@ module RailsAdmin
         "      invalid_email: 'Sorry, only email from %{domain} are accepted'\n"
       end
 
+      display "Copy omniauth_callbacks_controller_test.rb in test/functional/omniauth_callbacks_controller_test.rb"
+      copy_file 'controllers/omniauth_callbacks_controller_test.rb', "test/functional/omniauth_callbacks_controller_test.rb"
+      display "Edit the #{model_name.camelize.pluralize} controller according to the model name chose"
+      gsub_file Rails.root.join("test/functional/omniauth_callbacks_controller_test.rb"), /Users::OmniauthCallbacksControllerTest/, "#{model_name.camelize.pluralize}::OmniauthCallbacksControllerTests"
+
       display "Set #{model_name} model as omniauthable and unset as registerable"
       gsub_file Rails.root.join("app/models/#{model_name.underscore}.rb"), ::Regexp.new(", :registerable,"), ", :omniauthable,"
 
@@ -123,6 +128,9 @@ module RailsAdmin
 
       display "We have a dependency with omniauth-openid gem"
       gem 'omniauth-openid'
+
+      display "We have a dependency with mocha gem"
+      gem 'mocha', :group => :test
 
       display "Job's done: migrate, start your server and visit '/#{namespace}'!", :blue
     end
