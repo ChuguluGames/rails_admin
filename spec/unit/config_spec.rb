@@ -1,5 +1,4 @@
 require 'spec_helper'
-require 'rails_admin/extensions/history/history'
 
 describe RailsAdmin::Config do
 
@@ -21,7 +20,7 @@ describe RailsAdmin::Config do
       RailsAdmin::AbstractModel.all.map(&:model).should == [League]
     end
 
-    it 'should always exclude history' do
+    it 'should always exclude history', :active_record => true do
       RailsAdmin::AbstractModel.all.map(&:model).should_not include(RailsAdmin::History)
     end
 
@@ -251,7 +250,7 @@ describe RailsAdmin::Config do
         end
       end
 
-      RailsAdmin.config.visible_models(:controller => double(:_current_user => double(:role => :admin), :authorized? => true)).map(&:abstract_model).map(&:model).should == [Fan, Comment]
+      RailsAdmin.config.visible_models(:controller => double(:_current_user => double(:role => :admin), :authorized? => true)).map(&:abstract_model).map(&:model).should =~ [Fan, Comment]
     end
 
     it 'hides unallowed models' do
@@ -261,9 +260,15 @@ describe RailsAdmin::Config do
       RailsAdmin.config.visible_models(:controller => double(:authorized? => true)).map(&:abstract_model).map(&:model).should == [Comment]
       RailsAdmin.config.visible_models(:controller => double(:authorized? => false)).map(&:abstract_model).map(&:model).should == []
     end
+
+    it "should not contain embedded model", :mongoid => true do
+      RailsAdmin.config do |config|
+        config.included_models = [FieldTest, Comment, Embed]
+      end
+
+      RailsAdmin.config.visible_models(:controller => double(:_current_user => double(:role => :admin), :authorized? => true)).map(&:abstract_model).map(&:model).should =~ [FieldTest, Comment]
+     end
   end
-
-
 end
 
 module ExampleModule

@@ -1,23 +1,25 @@
 require 'spec_helper'
 require 'timecop'
-require 'rails_admin/adapters/mongoid'
 
-describe RailsAdmin::Adapters::Mongoid do
+describe 'RailsAdmin::Adapters::Mongoid', :mongoid => true do
   describe '#associations' do
     before :all do
       RailsAdmin::AbstractModel.reset_polymorphic_parents
 
       class MongoBlog
         include Mongoid::Document
-        references_many :mongo_posts
-        references_many :mongo_comments, :as => :commentable
+        has_many :mongo_posts
+        has_many :mongo_comments, :as => :commentable
+        field :mongo_blog_id
       end
 
       class MongoPost
         include Mongoid::Document
-        referenced_in :mongo_blog
+        belongs_to :mongo_blog
         has_and_belongs_to_many :mongo_categories
-        references_many :mongo_comments, :as => :commentable
+        has_many :mongo_comments, :as => :commentable
+        embeds_one :mongo_note
+        accepts_nested_attributes_for :mongo_note
       end
 
       class MongoCategory
@@ -27,7 +29,9 @@ describe RailsAdmin::Adapters::Mongoid do
 
       class MongoUser
         include Mongoid::Document
-        references_one :mongo_profile
+        has_one :mongo_profile
+        embeds_many :mongo_notes
+        accepts_nested_attributes_for :mongo_notes
         field :name, :type => String
         field :message, :type => String
         field :short_text, :type => String
@@ -37,20 +41,26 @@ describe RailsAdmin::Adapters::Mongoid do
 
       class MongoProfile
         include Mongoid::Document
-        referenced_in :mongo_user
+        belongs_to :mongo_user
       end
 
       class MongoComment
         include Mongoid::Document
-        referenced_in :commentable, :polymorphic => true
+        belongs_to :commentable, :polymorphic => true
       end
 
-      @blog = RailsAdmin::AbstractModel.new(MongoBlog)
-      @post = RailsAdmin::AbstractModel.new(MongoPost)
-      @category = RailsAdmin::AbstractModel.new(MongoCategory)
-      @user = RailsAdmin::AbstractModel.new(MongoUser)
-      @profile = RailsAdmin::AbstractModel.new(MongoProfile)
-      @comment = RailsAdmin::AbstractModel.new(MongoComment)
+      class MongoNote
+        include Mongoid::Document
+        embedded_in :mongo_post
+        embedded_in :mongo_user
+      end
+
+      @blog     = RailsAdmin::AbstractModel.new MongoBlog
+      @post     = RailsAdmin::AbstractModel.new MongoPost
+      @category = RailsAdmin::AbstractModel.new MongoCategory
+      @user     = RailsAdmin::AbstractModel.new MongoUser
+      @profile  = RailsAdmin::AbstractModel.new MongoProfile
+      @comment  = RailsAdmin::AbstractModel.new MongoComment
     end
 
     after :all do
@@ -58,21 +68,22 @@ describe RailsAdmin::Adapters::Mongoid do
     end
 
     it 'lists associations' do
-      @post.associations.map{|a|a[:name].to_s}.sort.should == ['mongo_blog', 'mongo_categories', 'mongo_comments']
+      @post.associations.map{|a| a[:name]}.should =~ [:mongo_blog, :mongo_categories, :mongo_comments, :mongo_note]
     end
 
     it 'reads correct and know types in [:belongs_to, :has_and_belongs_to_many, :has_many, :has_one]' do
-      (@post.associations + @blog.associations + @user.associations).map{|a|a[:type].to_s}.uniq.sort.should == ['belongs_to', 'has_and_belongs_to_many', 'has_many', 'has_one']
+      (@post.associations + @blog.associations + @user.associations).map{|a|a[:type].to_s}.uniq.should =~ ['belongs_to', 'has_and_belongs_to_many', 'has_many', 'has_one']
     end
 
     it "has correct parameter of belongs_to association" do
-      param = @post.associations.select{|a| a[:name] == :mongo_blog}.first
+      param = @post.associations.find{|a| a[:name] == :mongo_blog}
       param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
         :name=>:mongo_blog,
         :pretty_name=>"Mongo blog",
         :type=>:belongs_to,
         :foreign_key=>:mongo_blog_id,
         :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
         :as=>nil,
         :polymorphic=>false,
         :inverse_of=>nil,
@@ -84,13 +95,14 @@ describe RailsAdmin::Adapters::Mongoid do
     end
 
     it "has correct parameter of has_many association" do
-      param = @blog.associations.select{|a| a[:name] == :mongo_posts}.first
+      param = @blog.associations.find{|a| a[:name] == :mongo_posts}
       param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
         :name=>:mongo_posts,
         :pretty_name=>"Mongo posts",
         :type=>:has_many,
         :foreign_key=>:mongo_blog_id,
         :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
         :as=>nil,
         :polymorphic=>false,
         :inverse_of=>nil,
@@ -99,16 +111,22 @@ describe RailsAdmin::Adapters::Mongoid do
       }
       param[:primary_key_proc].call.should == :_id
       param[:model_proc].call.should == MongoPost
+      @post.properties.find{|f| f[:name] == :mongo_blog_id}[:type].should == :bson_object_id
+    end
+
+    it "should not confuse foreign_key column which belongs to associated model" do
+      @blog.properties.find{|f| f[:name] == :mongo_blog_id}[:type].should == :string
     end
 
     it "has correct parameter of has_and_belongs_to_many association" do
-      param = @post.associations.select{|a| a[:name] == :mongo_categories}.first
+      param = @post.associations.find{|a| a[:name] == :mongo_categories}
       param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
         :name=>:mongo_categories,
         :pretty_name=>"Mongo categories",
         :type=>:has_and_belongs_to_many,
         :foreign_key=>:mongo_category_ids,
         :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
         :as=>nil,
         :polymorphic=>false,
         :inverse_of=>nil,
@@ -121,13 +139,14 @@ describe RailsAdmin::Adapters::Mongoid do
 
     it "has correct parameter of polymorphic belongs_to association" do
       RailsAdmin::Config.stub!(:models_pool).and_return(["MongoBlog", "MongoPost", "MongoCategory", "MongoUser", "MongoProfile", "MongoComment"])
-      param = @comment.associations.select{|a| a[:name] == :commentable}.first
+      param = @comment.associations.find{|a| a[:name] == :commentable}
       param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
         :name=>:commentable,
         :pretty_name=>"Commentable",
         :type=>:belongs_to,
         :foreign_key=>:commentable_id,
         :foreign_type=>:commentable_type,
+        :foreign_inverse_of=>(Mongoid::VERSION >= '3.0.0' ? :commentable_field : nil),
         :as=>nil,
         :polymorphic=>true,
         :inverse_of=>nil,
@@ -140,13 +159,14 @@ describe RailsAdmin::Adapters::Mongoid do
 
     it "has correct parameter of polymorphic inverse has_many association" do
       RailsAdmin::Config.stub!(:models_pool).and_return(["MongoBlog", "MongoPost", "MongoCategory", "MongoUser", "MongoProfile", "MongoComment"])
-      param = @blog.associations.select{|a| a[:name] == :mongo_comments}.first
+      param = @blog.associations.find{|a| a[:name] == :mongo_comments}
       param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
         :name=>:mongo_comments,
         :pretty_name=>"Mongo comments",
         :type=>:has_many,
         :foreign_key=>:commentable_id,
         :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
         :as=>:commentable,
         :polymorphic=>false,
         :inverse_of=>nil,
@@ -156,27 +176,94 @@ describe RailsAdmin::Adapters::Mongoid do
       param[:primary_key_proc].call.should == :_id
       param[:model_proc].call.should == MongoComment
     end
+
+    it "has correct parameter of embeds_one association" do
+      param = @post.associations.find{|a| a[:name] == :mongo_note}
+      param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
+        :name=>:mongo_note,
+        :pretty_name=>"Mongo note",
+        :type=>:has_one,
+        :foreign_key=>nil,
+        :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
+        :as=>nil,
+        :polymorphic=>false,
+        :inverse_of=>nil,
+        :read_only=>nil,
+        :nested_form=>{:allow_destroy=>false, :update_only=>false}
+      }
+      param[:primary_key_proc].call.should == :_id
+      param[:model_proc].call.should == MongoNote
+    end
+
+    it "has correct parameter of embeds_many association" do
+      param = @user.associations.find{|a| a[:name] == :mongo_notes}
+      param.reject{|k, v| [:primary_key_proc, :model_proc].include? k }.should == {
+        :name=>:mongo_notes,
+        :pretty_name=>"Mongo notes",
+        :type=>:has_many,
+        :foreign_key=>nil,
+        :foreign_type=>nil,
+        :foreign_inverse_of=>nil,
+        :as=>nil,
+        :polymorphic=>false,
+        :inverse_of=>nil,
+        :read_only=>nil,
+        :nested_form=>{:allow_destroy=>false, :update_only=>false}
+      }
+      param[:primary_key_proc].call.should == :_id
+      param[:model_proc].call.should == MongoNote
+    end
+
+    it "should raise error when embeds_* is used without accepts_nested_attributes_for" do
+      class MongoEmbedsOne
+        include Mongoid::Document
+        embeds_one :mongo_embedded
+      end
+
+      class MongoEmbedsMany
+        include Mongoid::Document
+        embeds_many :mongo_embeddeds
+      end
+
+      class MongoEmbedded
+        include Mongoid::Document
+        embedded_in :mongo_embeds_one
+        embedded_in :mongo_embeds_many
+      end
+
+      lambda{ RailsAdmin::AbstractModel.new(MongoEmbedsOne).associations }.should raise_error(RuntimeError,
+        "Embbeded association without accepts_nested_attributes_for can't be handled by RailsAdmin,\nbecause embedded model doesn't have top-level access.\nPlease add `accepts_nested_attributes_for :mongo_embedded' line to `MongoEmbedsOne' model.\n"
+      )
+      lambda{ RailsAdmin::AbstractModel.new(MongoEmbedsMany).associations }.should raise_error(RuntimeError,
+        "Embbeded association without accepts_nested_attributes_for can't be handled by RailsAdmin,\nbecause embedded model doesn't have top-level access.\nPlease add `accepts_nested_attributes_for :mongo_embeddeds' line to `MongoEmbedsMany' model.\n"
+      )
+     end
   end
 
   describe "#properties" do
     before :all do
-      @abstract_model = RailsAdmin::AbstractModel.new(MongoidFieldTest)
+      @abstract_model = RailsAdmin::AbstractModel.new(FieldTest)
     end
 
     it "maps Mongoid column types to RA types" do
-      @abstract_model.properties.sort{|a,b| a[:name].to_s <=> b[:name].to_s }.should == [
+      @abstract_model.properties.select{|p| %w(_id _type array_field big_decimal_field
+        boolean_field bson_object_id_field date_field datetime_field default_field float_field
+        hash_field integer_field name object_field range_field short_text string_field subject
+        symbol_field text_field time_field title).
+        include? p[:name].to_s}.should =~ [
         { :name => :_id,
           :pretty_name => "Id",
           :nullable? => true,
-          :serial? => false,
+          :serial? => true,
           :type => :bson_object_id,
           :length => nil },
         { :name => :_type,
           :pretty_name => "Type",
           :nullable? => true,
           :serial? => false,
-          :type => :mongoid_type,
-          :length => 1024 },
+          :type => :text,
+          :length => nil },
         { :name => :array_field,
           :pretty_name => "Array field",
           :nullable? => true,
@@ -187,8 +274,8 @@ describe RailsAdmin::Adapters::Mongoid do
           :pretty_name => "Big decimal field",
           :nullable? => true,
           :serial? => false,
-          :type => :string,
-          :length => 1024 },
+          :type => :decimal,
+          :length => nil },
         { :name => :boolean_field,
           :pretty_name => "Boolean field",
           :nullable? => true,
@@ -207,18 +294,18 @@ describe RailsAdmin::Adapters::Mongoid do
           :serial? => false,
           :type => :date,
           :length => nil },
-        { :name => :date_time_field,
-          :pretty_name => "Date time field",
+        { :name => :datetime_field,
+          :pretty_name => "Datetime field",
           :nullable? => true,
           :serial? => false,
           :type => :datetime,
           :length => nil },
-        { :name => :description,
-          :pretty_name => "Description",
+        { :name => :default_field,
+          :pretty_name => "Default field",
           :nullable? => true,
           :serial? => false,
-          :type => :text,
-          :length => nil },
+          :type => :string,
+          :length => 255 },
         { :name => :float_field,
           :pretty_name => "Float field",
           :nullable? => true,
@@ -247,20 +334,38 @@ describe RailsAdmin::Adapters::Mongoid do
           :pretty_name => "Object field",
           :nullable? => true,
           :serial? => false,
-          :type => :bson_object_id,
-          :length => nil },
+          :type => :string,
+          :length => 255 },
         { :name => :short_text,
           :pretty_name => "Short text",
           :nullable? => true,
           :serial? => false,
           :type => :string,
           :length => 255 },
+        { :name => :string_field,
+          :pretty_name => "String field",
+          :nullable? => true,
+          :serial? => false,
+          :type => :text,
+          :length => nil },
         { :name => :subject,
           :pretty_name => "Subject",
           :nullable? => true,
           :serial? => false,
           :type => :string,
           :length => 255 },
+        { :name => :symbol_field,
+          :pretty_name => "Symbol field",
+          :nullable? => true,
+          :serial? => false,
+          :type => :string,
+          :length => 255 },
+        { :name => :text_field,
+          :pretty_name => "Text field",
+          :nullable? => true,
+          :serial? => false,
+          :type => :text,
+          :length => nil },
         { :name => :time_field,
           :pretty_name => "Time field",
           :nullable? => true,
@@ -279,16 +384,16 @@ describe RailsAdmin::Adapters::Mongoid do
 
   describe "data access method" do
     before do
-      @articles = FactoryGirl.create_list(:article, 3)
-      @abstract_model = RailsAdmin::AbstractModel.new('Article')
+      @players = FactoryGirl.create_list(:player, 3)
+      @abstract_model = RailsAdmin::AbstractModel.new('Player')
     end
 
     it "#new returns instance of AbstractObject" do
-      @abstract_model.new.object.should be_instance_of(Article)
+      @abstract_model.new.object.should be_instance_of(Player)
     end
 
     it "#get returns instance of AbstractObject" do
-      @abstract_model.get(@articles.first.id.to_s).object.should == @articles.first
+      @abstract_model.get(@players.first.id.to_s).object.should == @players.first
     end
 
     it "#get returns nil when id does not exist" do
@@ -296,25 +401,29 @@ describe RailsAdmin::Adapters::Mongoid do
     end
 
     it "#first returns first item" do
-      @abstract_model.first.should == @articles.first
+      @abstract_model.first.should == @players.first
     end
 
     it "#count returns count of items" do
-      @abstract_model.count.should == @articles.count
+      @abstract_model.count.should == @players.count
     end
 
     it "#destroy destroys multiple items" do
-      @abstract_model.destroy(@articles[0..1])
-      Article.all.should == @articles[2..2]
+      @abstract_model.destroy(@players[0..1])
+      Player.all.should == @players[2..2]
+    end
+
+    it "#where returns filtered results" do
+      @abstract_model.where(:name => @players.first.name).to_a.should == [@players.first]
     end
 
     describe "#all" do
       it "works without options" do
-        @abstract_model.all.sort.should == @articles.sort
+        @abstract_model.all.to_a.should =~ @players
       end
 
       it "supports eager loading" do
-        @abstract_model.all(:include => :author).inclusions.map{|i| i.class_name}.should == ["Author"]
+        @abstract_model.all(:include => :team).inclusions.map{|i| i.class_name}.should == ["Team"]
       end
 
       it "supports limiting" do
@@ -322,32 +431,31 @@ describe RailsAdmin::Adapters::Mongoid do
       end
 
       it "supports retrieval by bulk_ids" do
-        @abstract_model.all(:bulk_ids => @articles[0..1].map{|article| article.id.to_s }).
-          sort.should == @articles[0..1].sort
+        @abstract_model.all(:bulk_ids => @players[0..1].map{|player| player.id.to_s }).to_a.should =~ @players[0..1]
       end
 
       it "supports pagination" do
-        @abstract_model.all(:sort => 'articles._id', :page => 2, :per => 1).to_a.should == @articles[1..1]
+        @abstract_model.all(:sort => 'players._id', :page => 2, :per => 1).to_a.should == @players[1..1]
         # To prevent RSpec matcher to call Mongoid::Criteria#== method,
         # (we want to test equality of query result, not of Mongoid criteria)
         # to_a is added to invoke Mongoid query
       end
 
       it "supports ordering" do
-        @abstract_model.all(:sort => 'articles._id', :sort_reverse => false).to_a.should == @articles.sort
-        @abstract_model.all(:sort => 'articles._id', :sort_reverse => true).to_a.should == @articles.sort.reverse
+        @abstract_model.all(:sort => 'players._id', :sort_reverse => true).to_a.should == @players.sort
+        @abstract_model.all(:sort => 'players._id', :sort_reverse => false).to_a.should == @players.sort.reverse
       end
 
       it "supports querying" do
-        @abstract_model.all(:query => @articles[1].title).should == @articles[1..1]
+        @abstract_model.all(:query => @players[1].name).should == @players[1..1]
       end
 
       it "supports filtering" do
-        @abstract_model.all(:filters => {"title" => {"0000" => {:o=>"is", :v=>@articles[1].title}}}).should == @articles[1..1]
+        @abstract_model.all(:filters => {"name" => {"0000" => {:o=>"is", :v=>@players[1].name}}}).should == @players[1..1]
       end
 
       it "ignores non-existent field name on filtering" do
-        lambda{ @abstract_model.all(:filters => {"dummy" => {"0000" => {:o=>"is", :v=>@articles[1].title}}}) }.should_not raise_error
+        lambda{ @abstract_model.all(:filters => {"dummy" => {"0000" => {:o=>"is", :v=>@players[1].name}}}) }.should_not raise_error
       end
     end
   end
@@ -355,106 +463,106 @@ describe RailsAdmin::Adapters::Mongoid do
   describe "searching on association" do
     describe "whose type is belongs_to" do
       before do
-        RailsAdmin.config Article do
-          field :author do
+        RailsAdmin.config Player do
+          field :team do
             queryable true
           end
         end
-        @articles = FactoryGirl.create_list(:article, 3)
-        @author = FactoryGirl.create :author, :name => 'foobar'
-        @author.articles << @articles[1]
-        @abstract_model = RailsAdmin::AbstractModel.new('Article')
+        @players = FactoryGirl.create_list(:player, 3)
+        @team = FactoryGirl.create :team, :name => 'foobar'
+        @team.players << @players[1]
+        @abstract_model = RailsAdmin::AbstractModel.new('Player')
       end
 
       it "supports querying" do
-        @abstract_model.all(:query => 'foobar').to_a.should == @articles[1..1]
+        @abstract_model.all(:query => 'foobar').to_a.should == @players[1..1]
       end
 
       it "supports filtering" do
-        @abstract_model.all(:filters => {"author" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @articles[1..1]
+        @abstract_model.all(:filters => {"team" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @players[1..1]
       end
     end
 
     describe "whose type is has_many" do
       before do
-        RailsAdmin.config Author do
-          field :articles do
+        RailsAdmin.config Team do
+          field :players do
             queryable true
             searchable :all
           end
         end
-        @authors = FactoryGirl.create_list(:author, 3)
-        @articles = [{:author => @authors[1]},
-                     {:author => @authors[1], :title => 'foobar'},
-                     {:author => @authors[2]}].map{|h| FactoryGirl.create :article, h}
-        @abstract_model = RailsAdmin::AbstractModel.new('Author')
+        @teams = FactoryGirl.create_list(:team, 3)
+        @players = [{:team => @teams[1]},
+                     {:team => @teams[1], :name => 'foobar'},
+                     {:team => @teams[2]}].map{|h| FactoryGirl.create :player, h}
+        @abstract_model = RailsAdmin::AbstractModel.new('Team')
       end
 
       it "supports querying" do
-        @abstract_model.all(:query => 'foobar').to_a.should == @authors[1..1]
+        @abstract_model.all(:query => 'foobar').to_a.should == @teams[1..1]
       end
 
       it "supports filtering" do
-        @abstract_model.all(:filters => {"articles" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @authors[1..1]
+        @abstract_model.all(:filters => {"players" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @teams[1..1]
       end
     end
 
     describe "whose type is has_and_belongs_to_many" do
       before do
-        RailsAdmin.config Article do
-          field :tags do
+        RailsAdmin.config Team do
+          field :fans do
             queryable true
             searchable :all
           end
         end
-        @articles = FactoryGirl.create_list(:article, 3)
-        @tags = [{}, {:name => 'foobar'}, {}].map{|h| FactoryGirl.create :tag, h}
-        @articles[1].tags = [@tags[0], @tags[1]]
-        @articles[2].tags << @tags[2]
-        @abstract_model = RailsAdmin::AbstractModel.new('Article')
+        @teams = FactoryGirl.create_list(:team, 3)
+        @fans = [{}, {:name => 'foobar'}, {}].map{|h| FactoryGirl.create :fan, h}
+        @teams[1].fans = [@fans[0], @fans[1]]
+        @teams[2].fans << @fans[2]
+        @abstract_model = RailsAdmin::AbstractModel.new('Team')
       end
 
       it "supports querying" do
-        @abstract_model.all(:query => 'foobar').to_a.should == @articles[1..1]
+        @abstract_model.all(:query => 'foobar').to_a.should == @teams[1..1]
       end
 
       it "supports filtering" do
-        @abstract_model.all(:filters => {"tags" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @articles[1..1]
+        @abstract_model.all(:filters => {"fans" => {"0000" => {:o=>"is", :v=>'foobar'}}}).to_a.should == @teams[1..1]
       end
     end
   end
 
   describe "#query_conditions" do
     before do
-      @abstract_model = RailsAdmin::AbstractModel.new('Article')
-      @articles = [{}, {:title=>'Many foos'}, {:body=>'foo shortage'}].
-        map{|h| FactoryGirl.create :article, h}
+      @abstract_model = RailsAdmin::AbstractModel.new('Player')
+      @players = [{}, {:name=>'Many foos'}, {:position=>'foo shortage'}].
+        map{|h| FactoryGirl.create :player, h}
     end
 
     it "makes conrrect query" do
-      @abstract_model.all(:query => "foo").sort.should == @articles[1..2]
+      @abstract_model.all(:query => "foo").to_a.should =~ @players[1..2]
     end
   end
 
   describe "#filter_conditions" do
     before do
-      @abstract_model = RailsAdmin::AbstractModel.new('Article')
-      @author = FactoryGirl.create :author, :name => 'king of bar'
-      @articles = [{}, {:author=>@author}, {:title=>'Many foos', :author=>@author}, {:title=>'Great foo'}].
-        map{|h| FactoryGirl.create :article, h}
+      @abstract_model = RailsAdmin::AbstractModel.new('Player')
+      @team = FactoryGirl.create :team, :name => 'king of bar'
+      @players = [{}, {:team=>@team}, {:name=>'Many foos', :team=>@team}, {:name=>'Great foo'}].
+        map{|h| FactoryGirl.create :player, h}
     end
 
     it "makes conrrect query" do
       @abstract_model.all(:filters =>
-        {"title" => {"0000" => {:o=>"like", :v=>"foo"}},
-         "author" => {"0001" => {:o=>"like", :v=>"bar"}}}
-      ).should == [@articles[2]]
+        {"name" => {"0000" => {:o=>"like", :v=>"foo"}},
+         "team" => {"0001" => {:o=>"like", :v=>"bar"}}}
+      ).should == [@players[2]]
     end
   end
 
   describe "#build_statement" do
     before do
-      @abstract_model = RailsAdmin::AbstractModel.new('MongoidFieldTest')
+      @abstract_model = RailsAdmin::AbstractModel.new('FieldTest')
     end
 
     it "ignores '_discard' operator or value" do
@@ -524,21 +632,18 @@ describe RailsAdmin::Adapters::Mongoid do
       @abstract_model.send(:build_statement, :field, :string, "foo", "is").should == {:field=>'foo'}
     end
 
-    context 'filters on dates' do
-      it 'lists elements within outbound limits' do
-        date_format = I18n.t("admin.misc.filter_date_format", :default => I18n.t("admin.misc.filter_date_format", :locale => :en)).gsub('dd', '%d').gsub('mm', '%m').gsub('yy', '%Y')
+    it 'supports date type query' do
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } }).should == {"$and"=>[{"date_field"=>{"$gte"=>Date.new(2012,1,2), "$lte"=>Date.new(2012,1,3)}}]}
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).should == {"$and"=>[{"date_field"=>{"$gte"=>Date.new(2012,1,3)}}]}
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).should == {"$and"=>[{"date_field"=>{"$lte"=>Date.new(2012,1,2)}}]}
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).should == {"$and"=>[{"date_field"=>{"$gte"=>Date.new(2012,1,2), "$lte"=>Date.new(2012,1,2)}}]}
+    end
 
-        MongoidFieldTest.create!(:date_field => Date.strptime("01/01/2012", date_format))
-        MongoidFieldTest.create!(:date_field => Date.strptime("01/02/2012", date_format))
-        MongoidFieldTest.create!(:date_field => Date.strptime("01/03/2012", date_format))
-        MongoidFieldTest.create!(:date_field => Date.strptime("01/04/2012", date_format))
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/02/2012"], :o => 'between' } } } ).count.should == 1
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).count.should == 1
-
-      end
+    it 'supports datetime type query' do
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } } ).should == {"$and"=>[{"datetime_field"=>{"$gte"=>Time.local(2012,1,2), "$lte"=>Time.local(2012,1,3).end_of_day}}]}
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).should == {"$and"=>[{"datetime_field"=>{"$gte"=>Time.local(2012,1,3)}}]}
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).should == {"$and"=>[{"datetime_field"=>{"$lte"=>Time.local(2012,1,2).end_of_day}}]}
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).should == {"$and"=>[{"datetime_field"=>{"$gte"=>Time.local(2012,1,2), "$lte"=>Time.local(2012,1,2).end_of_day}}]}
     end
 
     it "supports enum type query" do
@@ -548,7 +653,7 @@ describe RailsAdmin::Adapters::Mongoid do
 
   describe "model attribute method" do
     before do
-      @abstract_model = RailsAdmin::AbstractModel.new('Article')
+      @abstract_model = RailsAdmin::AbstractModel.new('Player')
     end
 
     it "#scoped returns relation object" do
@@ -556,13 +661,13 @@ describe RailsAdmin::Adapters::Mongoid do
     end
 
     it "#table_name works" do
-      @abstract_model.table_name.should == 'articles'
+      @abstract_model.table_name.should == 'players'
     end
   end
 
   describe "serialization" do
     before do
-      @abstract_model = RailsAdmin::AbstractModel.new('MongoidFieldTest')
+      @abstract_model = RailsAdmin::AbstractModel.new('FieldTest')
       @controller = RailsAdmin::MainController.new
     end
 

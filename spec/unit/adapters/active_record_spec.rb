@@ -1,9 +1,7 @@
 require 'spec_helper'
 require 'timecop'
-require 'rails_admin/adapters/active_record'
 
-
-describe RailsAdmin::Adapters::ActiveRecord do
+describe 'RailsAdmin::Adapters::ActiveRecord', :active_record => true do
   before do
     @like = ::ActiveRecord::Base.configurations[Rails.env]['adapter'] == "postgresql" ? 'ILIKE' : 'LIKE'
   end
@@ -52,11 +50,11 @@ describe RailsAdmin::Adapters::ActiveRecord do
     end
 
     it 'lists associations' do
-      @post.associations.map{|a|a[:name].to_s}.sort.should == ['a_r_blog', 'a_r_categories', 'a_r_comments']
+      @post.associations.map{|a|a[:name].to_s}.should =~ ['a_r_blog', 'a_r_categories', 'a_r_comments']
     end
 
     it 'list associations types in supported [:belongs_to, :has_and_belongs_to_many, :has_many, :has_one]' do
-      (@post.associations + @blog.associations + @user.associations).map{|a|a[:type]}.uniq.map(&:to_s).sort.should == ['belongs_to', 'has_and_belongs_to_many', 'has_many', 'has_one']
+      (@post.associations + @blog.associations + @user.associations).map{|a|a[:type]}.uniq.map(&:to_s).should =~ ['belongs_to', 'has_and_belongs_to_many', 'has_many', 'has_one']
     end
 
     it "has correct parameter of belongs_to association" do
@@ -194,9 +192,13 @@ describe RailsAdmin::Adapters::ActiveRecord do
       Player.all.should == @players[2..2]
     end
 
+    it "#where returns filtered results" do
+      @abstract_model.where(:name => @players.first.name).should == [@players.first]
+    end
+
     describe "#all" do
       it "works without options" do
-        @abstract_model.all.sort.should == @players.sort
+        @abstract_model.all.should =~ @players
       end
 
       it "supports eager loading" do
@@ -208,8 +210,7 @@ describe RailsAdmin::Adapters::ActiveRecord do
       end
 
       it "supports retrieval by bulk_ids" do
-        @abstract_model.all(:bulk_ids => @players[0..1].map{|player| player.id }).
-          sort.should == @players[0..1].sort
+        @abstract_model.all(:bulk_ids => @players[0..1].map(&:id)).should =~ @players[0..1]
       end
 
       it "supports pagination" do
@@ -239,7 +240,7 @@ describe RailsAdmin::Adapters::ActiveRecord do
     end
 
     it "makes conrrect query" do
-      @abstract_model.all(:query => "foo").sort.should == @teams[1..2]
+      @abstract_model.all(:query => "foo").should =~ @teams[1..2]
     end
   end
 
@@ -332,21 +333,19 @@ describe RailsAdmin::Adapters::ActiveRecord do
       @abstract_model.send(:build_statement, :field, :string, "foo", "is").should == ["(field #{@like} ?)", "foo"]
     end
 
-    context 'filters on dates' do
-      it 'lists elements within outbound limits' do
-        date_format = I18n.t("admin.misc.filter_date_format", :default => I18n.t("admin.misc.filter_date_format", :locale => :en)).gsub('dd', '%d').gsub('mm', '%m').gsub('yy', '%Y')
 
-        FieldTest.create!(:date_field => Date.strptime("01/01/2012", date_format))
-        FieldTest.create!(:date_field => Date.strptime("01/02/2012", date_format))
-        FieldTest.create!(:date_field => Date.strptime("01/03/2012", date_format))
-        FieldTest.create!(:date_field => Date.strptime("01/04/2012", date_format))
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/02/2012"], :o => 'between' } } } ).count.should == 1
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).count.should == 2
-        @abstract_model.all(:filters => { "date_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).count.should == 1
+    it 'supports date type query' do
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } }).should == ["((field_tests.date_field BETWEEN ? AND ?))", Date.new(2012,1,2), Date.new(2012,1,3)]
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).should == ["((field_tests.date_field >= ?))", Date.new(2012,1,3)]
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).should == ["((field_tests.date_field <= ?))", Date.new(2012,1,2)]
+      @abstract_model.send(:filter_conditions, { "date_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).should == ["((field_tests.date_field BETWEEN ? AND ?))", Date.new(2012,1,2), Date.new(2012,1,2)]
+    end
 
-      end
+    it 'supports datetime type query' do
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "01/02/2012", "01/03/2012"], :o => 'between' } } } ).should == ["((field_tests.datetime_field BETWEEN ? AND ?))", Time.local(2012,1,2), Time.local(2012,1,3).end_of_day]
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "01/03/2012", ""], :o => 'between' } } } ).should == ["((field_tests.datetime_field >= ?))", Time.local(2012,1,3)]
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["", "", "01/02/2012"], :o => 'between' } } } ).should == ["((field_tests.datetime_field <= ?))", Time.local(2012,1,2).end_of_day]
+      @abstract_model.send(:filter_conditions, { "datetime_field" => { "1" => { :v => ["01/02/2012"], :o => 'default' } } } ).should == ["((field_tests.datetime_field BETWEEN ? AND ?))", Time.local(2012,1,2), Time.local(2012,1,2).end_of_day]
     end
 
     it "supports enum type query" do

@@ -6,15 +6,16 @@ module RailsAdmin
   module Adapters
     module Mongoid
       STRING_TYPE_COLUMN_NAMES = [:name, :title, :subject]
+      DISABLED_COLUMN_TYPES = ['Range']
 
       def new(params = {})
         AbstractObject.new(model.new)
       end
 
       def get(id)
-        if object = model.where(:_id=>BSON::ObjectId(id)).first
-          AbstractObject.new object
-        else
+        begin
+          AbstractObject.new(model.find(id))
+        rescue BSON::InvalidObjectId, ::Mongoid::Errors::DocumentNotFound
           nil
         end
       end
@@ -61,6 +62,7 @@ module RailsAdmin
             :primary_key_proc => Proc.new { association_primary_key_lookup(association) },
             :foreign_key => association_foreign_key_lookup(association),
             :foreign_type => association_foreign_type_lookup(association),
+            :foreign_inverse_of => association_foreign_inverse_of_lookup(association),
             :as => association_as_lookup(association),
             :polymorphic => association_polymorphic_lookup(association),
             :inverse_of => association_inverse_of_lookup(association),
@@ -71,37 +73,41 @@ module RailsAdmin
       end
 
       def properties
-        @properties if @properties
-        @properties = model.fields.map do |name,field|
-          ar_type =
-            if name == '_type'
-              { :type => :mongoid_type, :length => 1024 }
-            elsif field.type.to_s == 'String'
+        fields = model.fields.reject{|name, field| DISABLED_COLUMN_TYPES.include?(field.type.to_s) }
+        fields.map do |name,field|
+          ar_type = {
+            "Array"          => { :type => :serialized },
+            "BigDecimal"     => { :type => :decimal },
+            "Boolean"        => { :type => :boolean },
+            "BSON::ObjectId" => { :type => :bson_object_id, :serial? => (name == primary_key) },
+            "Date"           => { :type => :date },
+            "DateTime"       => { :type => :datetime },
+            "Float"          => { :type => :float },
+            "Hash"           => { :type => :serialized },
+            "Integer"        => { :type => :integer },
+            "Object"         => (
+              if associations.find{|a| a[:type] == :belongs_to && a[:foreign_key] == name.to_sym}
+                { :type => :bson_object_id }
+              else
+                { :type => :string, :length => 255 }
+              end
+            ),
+            "String"         => (
               if (length = length_validation_lookup(name)) && length < 256
                 { :type => :string, :length => length }
               elsif STRING_TYPE_COLUMN_NAMES.include?(name.to_sym)
                 { :type => :string, :length => 255 }
               else
-                { :type => :text, :length => nil }
+                { :type => :text }
               end
-            else
-              {
-                "Array"          => { :type => :serialized, :length => nil },
-                "BigDecimal"     => { :type => :string, :length => 1024 },
-                "Boolean"        => { :type => :boolean, :length => nil },
-                "BSON::ObjectId" => { :type => :bson_object_id, :length => nil },
-                "Date"           => { :type => :date, :length => nil },
-                "DateTime"       => { :type => :datetime, :length => nil },
-                "Float"          => { :type => :float, :length => nil },
-                "Hash"           => { :type => :serialized, :length => nil },
-                "Integer"        => { :type => :integer, :length => nil },
-                "Time"           => { :type => :datetime, :length => nil },
-                "Object"         => { :type => :bson_object_id, :length => nil },
-              }[field.type.to_s] or raise "Need to map field #{field.type.to_s} for field name #{name} in #{model.inspect}"
-            end
+            ),
+            "Symbol"         => { :type => :string, :length => 255 },
+            "Time"           => { :type => :datetime },
+          }[field.type.to_s] or raise "Need to map field #{field.type.to_s} for field name #{name} in #{model.inspect}"
 
           {
             :name => field.name.to_sym,
+            :length => nil,
             :pretty_name => field.name.to_s.gsub('_', ' ').strip.capitalize,
             :nullable? => true,
             :serial? => false,
@@ -211,7 +217,7 @@ module RailsAdmin
         when :boolean
           return { column => false } if ['false', 'f', '0'].include?(value)
           return { column => true } if ['true', 't', '1'].include?(value)
-        when :integer, :belongs_to_association
+        when :integer
           return if value.blank?
           { column => value.to_i } if value.to_i.to_s == value
         when :string, :text
@@ -229,7 +235,7 @@ module RailsAdmin
             return
           end
           { column => value }
-        when :datetime, :timestamp, :date
+        when :date
           start_date, end_date = get_filtering_duration(operator, value)
 
           if start_date && end_date
@@ -239,14 +245,27 @@ module RailsAdmin
           elsif end_date
             { column => { '$lte' => end_date } }
           end
+        when :datetime, :timestamp
+          start_date, end_date = get_filtering_duration(operator, value)
+
+          if start_date && end_date
+            { column => { '$gte' => start_date.to_time.beginning_of_day, '$lte' => end_date.to_time.end_of_day } }
+          elsif start_date
+            { column => { '$gte' => start_date.to_time.beginning_of_day } }
+          elsif end_date
+            { column => { '$lte' => end_date.to_time.end_of_day } }
+          end
         when :enum
           return if value.blank?
           { column => { "$in" => Array.wrap(value) } }
+        when :belongs_to_association, :bson_object_id
+          object_id = (BSON::ObjectId(value) rescue nil)
+          { column => object_id } if object_id
         end
       end
 
       def association_model_proc_lookup(association)
-        if association.polymorphic? && association.macro == :referenced_in
+        if association.polymorphic? && [:referenced_in, :belongs_to].include?(association.macro)
           RailsAdmin::AbstractModel.polymorphic_parents(:mongoid, association.name) || []
         else
           association.klass
@@ -254,13 +273,27 @@ module RailsAdmin
       end
 
       def association_foreign_type_lookup(association)
-        if association.polymorphic? && association.macro == :referenced_in
+        if association.polymorphic? && [:referenced_in, :belongs_to].include?(association.macro)
           association.inverse_type.try(:to_sym) || :"#{association.name}_type"
         end
       end
 
+      def association_foreign_inverse_of_lookup(association)
+        if association.polymorphic? && [:referenced_in, :belongs_to].include?(association.macro) && association.respond_to?(:inverse_of_field)
+          association.inverse_of_field.try(:to_sym)
+        end
+      end
+
       def association_nested_attributes_options_lookup(association)
-        model.nested_attributes_options.try { |o| o[association.name.to_sym] }
+        nested = model.nested_attributes_options.try { |o| o[association.name.to_sym] }
+        if !nested && [:embeds_one, :embeds_many].include?(association.macro.to_sym)
+          raise <<-MSG.gsub(/^\s+/, '')
+          Embbeded association without accepts_nested_attributes_for can't be handled by RailsAdmin,
+          because embedded model doesn't have top-level access.
+          Please add `accepts_nested_attributes_for :#{association.name}' line to `#{model.to_s}' model.
+          MSG
+        end
+        nested
       end
 
       def association_as_lookup(association)
@@ -268,7 +301,7 @@ module RailsAdmin
       end
 
       def association_polymorphic_lookup(association)
-        !!association.polymorphic? && association.macro == :referenced_in
+        !!association.polymorphic? && [:referenced_in, :belongs_to].include?(association.macro)
       end
 
       def association_primary_key_lookup(association)
@@ -280,18 +313,20 @@ module RailsAdmin
       end
 
       def association_foreign_key_lookup(association)
-        association.foreign_key.to_sym rescue nil
+        unless [:embeds_one, :embeds_many].include?(association.macro.to_sym)
+          association.foreign_key.to_sym rescue nil
+        end
       end
       
       def association_type_lookup(macro)
         case macro.to_sym
-        when :referenced_in, :embedded_in
+        when :belongs_to, :referenced_in, :embedded_in
           :belongs_to
-        when :references_one, :embeds_one
+        when :has_one, :references_one, :embeds_one
           :has_one
-        when :references_many, :embeds_many
+        when :has_many, :references_many, :embeds_many
           :has_many
-        when :references_and_referenced_in_many
+        when :has_and_belongs_to_many, :references_and_referenced_in_many
           :has_and_belongs_to_many
         else
           raise "Unknown association type: #{macro.inspect}"
@@ -301,7 +336,8 @@ module RailsAdmin
       def length_validation_lookup(name)
         shortest = model.validators.select do |validator|
           validator.attributes.include?(name.to_sym) &&
-            validator.class == ActiveModel::Validations::LengthValidator
+            validator.kind == :length &&
+            validator.options[:maximum]
         end.min{|a, b| a.options[:maximum] <=> b.options[:maximum] }
         if shortest
           shortest.options[:maximum]
@@ -344,9 +380,9 @@ module RailsAdmin
           return scope
         end
         if options[:sort_reverse]
-          scope.desc field_name
-        else
           scope.asc field_name
+        else
+          scope.desc field_name
         end
       end
     end

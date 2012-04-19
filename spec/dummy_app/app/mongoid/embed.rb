@@ -1,7 +1,6 @@
-class Tag
+class Embed
   include Mongoid::Document
-
   field :name, :type => String
 
-  references_and_referenced_in_many :articles
+  embedded_in :field_test
 end

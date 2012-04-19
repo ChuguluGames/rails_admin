@@ -3,7 +3,7 @@ source 'https://rubygems.org'
 # Bundle gems for the local environment. Make sure to
 # put test-only gems in this group so their generators
 # and rake tasks are available in development mode:
-group :development, :test do
+group :active_record do
   platforms :jruby do
     case ENV['CI_DB_ADAPTER']
     when 'mysql'
@@ -28,10 +28,21 @@ group :development, :test do
       gem 'sqlite3', '~> 1.3'
     end
   end
+  gem 'carrierwave'
+end
 
-  gem 'bson_ext'
-  gem 'mongoid'
-  gem 'cancan'
+group :mongoid do
+  gem 'bson_ext', :platforms => [:ruby, :mswin, :mingw]
+  case ENV['CI_ORM_VERSION']
+  when 'head'
+    gem 'mongoid', :git => 'git://github.com/mongoid/mongoid.git'
+    # For now, carrierwave-mongoid's mongoid dependency is restricted to '~> 2.1'
+    gem 'carrierwave-mongoid', :require => 'carrierwave/mongoid', :git => 'git://github.com/tanordheim/carrierwave-mongoid.git', :branch => 'mongoid_3_0'
+  else
+    gem 'mongoid'
+    gem 'carrierwave-mongoid', :require => 'carrierwave/mongoid'
+  end
+  gem 'mongoid-paperclip', :require => 'mongoid_paperclip'
 end
 
 group :debug do
@@ -44,10 +55,20 @@ group :debug do
     gem 'ruby-debug19'
     gem 'simplecov', :require => false
   end
+
+  platform :jruby do
+    gem 'ruby-debug'
+  end
 end
 
 platforms :jruby, :mingw_18, :ruby_18 do
   gem 'fastercsv', '~> 1.5'
+end
+
+group :development, :test do
+  gem 'cancan'
+  gem 'devise'
+  gem 'paperclip', '~> 2.7'
 end
 
 gemspec
